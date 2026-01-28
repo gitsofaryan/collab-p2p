@@ -1,18 +1,23 @@
 "use client"
 
 import { useParams, useSearchParams } from "next/navigation"
-import { useState, useEffect, Suspense } from "react"
-import Sidebar from "@/components/Sidebar"
+import { useState, Suspense } from "react"
+import Navbar from "@/components/Navbar"
 import dynamic from "next/dynamic"
 
 // Import only the Yjs Sync Hook
 import { useRealtimeSync } from "@/hooks/useRealtimeSync"
-// import { useTldrawSync } from "@/hooks/useTldrawSync" <-- Disabled
 
 const Editor = dynamic(() => import("@monaco-editor/react"), {
     ssr: false,
     loading: () => <div className="h-full w-full bg-white animate-pulse" />
 })
+
+const Whiteboard = dynamic(() => import("@/components/Whiteboard"), {
+    ssr: false,
+    loading: () => <div className="h-full w-full bg-white animate-pulse" />
+})
+
 function RoomContent() {
     const params = useParams()
     const roomId = params?.id as string
@@ -21,13 +26,16 @@ function RoomContent() {
     // UI State
     const [username, setUsername] = useState(() => searchParams.get("username") || "")
     const [isNameDialogOpen, setIsNameDialogOpen] = useState(!searchParams.get("username"))
+    const [activeView, setActiveView] = useState<"editor" | "whiteboard">("editor")
 
     // Reference for the Monaco Editor instance
     const [editorRef, setEditorRef] = useState<any>(null)
 
     // Activate Real-time Sync via Yjs
-    // We pass username now for awareness
-    const { doc, provider, users } = useRealtimeSync(editorRef, roomId, username)
+    const {
+        users
+        // We can ignore file props if we are removing the UI for it
+    } = useRealtimeSync(editorRef, roomId, username)
 
     const handleJoin = (name: string) => {
         if (!name.trim()) return
@@ -64,30 +72,38 @@ function RoomContent() {
     }
 
     return (
-        <div className="h-screen flex bg-zinc-900 overflow-hidden text-black">
-            <Sidebar
+        <div className="h-screen flex flex-col bg-zinc-900 overflow-hidden text-black">
+            <Navbar
                 roomId={roomId}
                 username={username}
                 users={users}
+                activeView={activeView}
+                onViewChange={setActiveView}
             />
 
-            <main className="flex-grow relative h-full bg-white">
-                <div className="h-full w-full">
-                    <Editor
-                        height="100%"
-                        defaultLanguage="javascript"
-                        defaultValue="// Real-time Session Active. Type to sync..."
-                        theme="light"
-                        onMount={(editor) => setEditorRef(editor)} // Captures ref for Yjs
-                        options={{
-                            minimap: { enabled: false },
-                            fontSize: 14,
-                            padding: { top: 20 },
-                            automaticLayout: true,
-                            wordWrap: "on"
-                        }}
-                    />
-                </div>
+            <main className="flex-grow relative w-full h-full bg-white overflow-hidden flex">
+                {activeView === "editor" ? (
+                    <div className="h-full w-full">
+                        <Editor
+                            height="100%"
+                            defaultLanguage="javascript"
+                            // Remove defaultValue to let Yjs handle init
+                            theme="light"
+                            onMount={(editor) => setEditorRef(editor)}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 14,
+                                padding: { top: 20 },
+                                automaticLayout: true,
+                                wordWrap: "on"
+                            }}
+                        />
+                    </div>
+                ) : (
+                    <div className="h-full w-full">
+                        <Whiteboard />
+                    </div>
+                )}
             </main>
         </div>
     )
