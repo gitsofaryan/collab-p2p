@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import { useState, Suspense } from "react"
 import Navbar from "@/components/Navbar"
 import dynamic from "next/dynamic"
+import { toast } from "sonner"
 
 // Import only the Yjs Sync Hook
 import { useRealtimeSync } from "@/hooks/useRealtimeSync"
@@ -38,12 +39,24 @@ function RoomContent() {
     } = useRealtimeSync(editorRef, roomId, username)
 
     const handleJoin = (name: string) => {
-        if (!name.trim()) return
+        const trimmedName = name.trim()
+
+        // Validation with toasts
+        if (trimmedName.length === 0) {
+            toast.error("Enter your username")
+            return
+        }
+        if (trimmedName.length < 3) {
+            toast.error("Username must be at least 3 characters long")
+            return
+        }
+
         const params = new URLSearchParams(searchParams.toString())
-        params.set("username", name)
+        params.set("username", trimmedName)
         window.history.replaceState(null, "", `?${params.toString()}`)
-        setUsername(name)
+        setUsername(trimmedName)
         setIsNameDialogOpen(false)
+        toast.success(`Welcome, ${trimmedName}!`)
     }
 
     if (isNameDialogOpen) {

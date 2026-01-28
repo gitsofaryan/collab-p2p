@@ -105,10 +105,13 @@ export default function Navbar({ roomId, username, users, activeView, onViewChan
                 {/* View Switcher */}
                 <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
                     <button
-                        onClick={() => onViewChange("editor")}
+                        onClick={() => {
+                            onViewChange("editor")
+                            toast.info("Switched to Code Editor")
+                        }}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === "editor"
-                                ? "bg-white text-black shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
+                            ? "bg-white text-black shadow-sm ring-1 ring-black/5"
+                            : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
                             }`}
                         title="Switch to Code Editor"
                     >
@@ -116,10 +119,13 @@ export default function Navbar({ roomId, username, users, activeView, onViewChan
                         <span className="hidden sm:inline">Editor</span>
                     </button>
                     <button
-                        onClick={() => onViewChange("whiteboard")}
+                        onClick={() => {
+                            onViewChange("whiteboard")
+                            toast.info("Switched to Whiteboard")
+                        }}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === "whiteboard"
-                                ? "bg-white text-black shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
+                            ? "bg-white text-black shadow-sm ring-1 ring-black/5"
+                            : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
                             }`}
                         title="Switch to Whiteboard"
                     >

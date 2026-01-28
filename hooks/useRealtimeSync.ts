@@ -3,6 +3,7 @@
 import * as Y from 'yjs'
 import { useEffect, useState, useRef } from 'react'
 import { WebrtcProvider } from 'y-webrtc'
+import { toast } from 'sonner'
 
 export function useRealtimeSync(editor: any, roomId: string, username: string) {
   const [doc] = useState(() => new Y.Doc())
@@ -39,7 +40,40 @@ export function useRealtimeSync(editor: any, roomId: string, username: string) {
                activeUsers.push({ clientId, ...state.user })
            }
        })
-       setUsers(activeUsers)
+       
+       // Detect user changes and show toasts
+       setUsers((prevUsers) => {
+           // Find new users (joined)
+           const newUsers = activeUsers.filter(
+               (user) => !prevUsers.some((prev) => prev.clientId === user.clientId)
+           )
+           
+           // Find removed users (left)
+           const leftUsers = prevUsers.filter(
+               (prev) => !activeUsers.some((user) => user.clientId === prev.clientId)
+           )
+           
+           // Show toast for joined users (but not on initial load)
+           if (prevUsers.length > 0) {
+               newUsers.forEach((user) => {
+                   if (user.name !== username) {
+                       toast.success(`${user.name} joined the room`, {
+                           duration: 3000,
+                       })
+                   }
+               })
+               
+               leftUsers.forEach((user) => {
+                   if (user.name !== username) {
+                       toast.error(`${user.name} left the room`, {
+                           duration: 3000,
+                       })
+                   }
+               })
+           }
+           
+           return activeUsers
+       })
     }
     
     yProvider.awareness.on('change', updateUsers)
@@ -50,7 +84,12 @@ export function useRealtimeSync(editor: any, roomId: string, username: string) {
     return () => {
       // Cleanup Binding if exists
       if (bindingRef.current) {
-         try { bindingRef.current.destroy() } catch (e) {} 
+         try { 
+           bindingRef.current.destroy()
+         } catch (e) {
+           // Silently suppress Yjs cleanup errors
+         } 
+         bindingRef.current = null
       }
       yProvider.destroy()
     }
@@ -64,22 +103,6 @@ export function useRealtimeSync(editor: any, roomId: string, username: string) {
      let isMounted = true
 
      const bindEditor = async () => {
-         // Cleanup previous binding
-         if (bindingRef.current) {
-             try {
-                bindingRef.current.destroy() 
-             } catch (err: any) {
-                 // specific yjs error invalid state
-                 const msg = err?.message || String(err)
-                 if (msg.includes("event handler that doesn't exist")) {
-                    // benign
-                 } else {
-                     console.warn("Binding cleanup warning:", err)
-                 }
-             }
-             bindingRef.current = null
-         }
-
          const { MonacoBinding } = await import('y-monaco')
          if (!isMounted) return
 
@@ -102,6 +125,16 @@ export function useRealtimeSync(editor: any, roomId: string, username: string) {
 
      return () => {
         isMounted = false
+        
+        // Cleanup binding when editor changes or unmounts
+        if (bindingRef.current) {
+          try {
+            bindingRef.current.destroy()
+          } catch (e) {
+            // Silently suppress Yjs cleanup errors
+          }
+          bindingRef.current = null
+        }
      }
   }, [editor, provider, doc])
 
