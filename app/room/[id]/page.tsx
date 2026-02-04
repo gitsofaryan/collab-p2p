@@ -34,8 +34,8 @@ function RoomContent() {
 
     // Activate Real-time Sync via Yjs
     const {
-        users
-        // We can ignore file props if we are removing the UI for it
+        users,
+        stats
     } = useRealtimeSync(editorRef, roomId, username)
 
     const handleJoin = (name: string) => {
@@ -90,6 +90,7 @@ function RoomContent() {
                 roomId={roomId}
                 username={username}
                 users={users}
+                stats={stats}
                 activeView={activeView}
                 onViewChange={setActiveView}
             />

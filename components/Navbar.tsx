@@ -10,9 +10,10 @@ interface NavbarProps {
     users: any[]
     activeView: "editor" | "whiteboard"
     onViewChange: (view: "editor" | "whiteboard") => void
+    stats?: { peers: number, latency: number, relay: boolean, address: string }
 }
 
-export default function Navbar({ roomId, username, users, activeView, onViewChange }: NavbarProps) {
+export default function Navbar({ roomId, username, users, activeView, onViewChange, stats }: NavbarProps) {
     const [isUsersOpen, setIsUsersOpen] = useState(false)
 
     return (
@@ -37,6 +38,29 @@ export default function Navbar({ roomId, username, users, activeView, onViewChan
                     </span>
                 </div>
             </div>
+
+            {/* Network Stats (Debug UI) */}
+            {stats && (
+                <div className="hidden lg:flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-md border border-gray-100">
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none">Status</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${stats.relay ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+                            <span className="text-xs font-bold text-gray-700">{stats.relay ? 'Relay Active' : 'Connecting...'}</span>
+                        </div>
+                    </div>
+                    <div className="h-6 w-px bg-gray-200" />
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none">Peers</span>
+                        <span className="text-xs font-mono font-bold text-gray-700">{stats.peers} Connected</span>
+                    </div>
+                    <div className="h-6 w-px bg-gray-200" />
+                    <div className="flex flex-col items-end" title={stats.address}>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none">My ID</span>
+                        <span className="text-xs font-mono font-bold text-gray-700 cursor-help">{stats.address.slice(-6)}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Right Actions */}
             <div className="flex items-center gap-3">
