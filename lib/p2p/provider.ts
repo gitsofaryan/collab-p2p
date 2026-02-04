@@ -1,108 +1,137 @@
 import * as Y from 'yjs'
 import { Libp2p } from 'libp2p'
-import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
-import { toast } from 'sonner'
+import { fromString, toString } from 'uint8arrays'
+import { encodeAwarenessUpdate, applyAwarenessUpdate, Awareness } from 'y-protocols/awareness'
+import { INTERVALS, DEBUG } from './constants'
 
-// 1. Define the service map to tell TS that pubsub exists
-type ServiceMap = {
-  pubsub: any // Using 'any' here bypasses strict type checks on the pubsub methods
+export interface ProviderOptions {
+  awareness?: Awareness
 }
 
 export class Libp2pProvider {
-  public doc: Y.Doc
-  public awareness: Awareness
-  public node: Libp2p<ServiceMap>
   public topic: string
-  private _connected: boolean = false
+  public doc: Y.Doc
+  public libp2p: Libp2p
+  public awareness: Awareness
+  private _syncInterval: any
+  private _isDestroyed: boolean = false
 
-  // 2. Accept a generic node in the constructor
-  constructor(node: Libp2p<any>, doc: Y.Doc, roomId: string) {
-    // 3. Cast the node to our specific type
-    this.node = node as Libp2p<ServiceMap>
+  constructor(topic: string, doc: Y.Doc, libp2p: Libp2p, options: ProviderOptions = {}) {
+    this.topic = topic
     this.doc = doc
-    this.topic = `collab-space-v1-${roomId}`
-    this.awareness = new Awareness(doc)
+    this.libp2p = libp2p
+    this.awareness = options.awareness || new Awareness(doc)
 
-    // Now TypeScript knows 'pubsub' exists!
-    this.node.services.pubsub.subscribe(this.topic)
+    // Bind event handlers
+    this._onMessage = this._onMessage.bind(this)
+    
+    // Subscribe to PubSub
+    const pubsub = this.libp2p.services.pubsub as any
+    pubsub.addEventListener('message', this._onMessage)
+    pubsub.subscribe(this.topic)
 
-    // 2. Listen for Incoming Messages (GossipSub)
-    this.node.services.pubsub.addEventListener('message', (evt: any) => {
-      const { topic, data, from } = evt.detail
-      if (topic !== this.topic) return
-      if (from.toString() === this.node.peerId.toString()) return // Ignore self
-
-      this.applyUpdate(data)
+    // Sync Doc Updates
+    this.doc.on('update', (update, origin) => {
+      if (origin !== this) {
+        this._publish({
+          type: 'syncUpdate',
+          topic: this.topic,
+          update: toString(update, 'base64')
+        })
+      }
     })
 
-    this.setupYjsBindings()
-    this.setupAwareness()
-
-    this._connected = true
-    console.log(`[Libp2pProvider] Connected to topic: ${this.topic}`)
-  }
-
-  // --- Core Logic ---
-
-  private setupYjsBindings() {
-    this.doc.on('update', (update: Uint8Array, origin: any) => {
-       if (origin !== this) {
-         this.publish('doc-update', update)
-       }
-    })
-  }
-
-  private setupAwareness() {
-      // Broadcast my state changes
-      this.awareness.on('update', ({ added, updated, removed }: any) => {
-          const changedClients = added.concat(updated).concat(removed)
-          const update = encodeAwarenessUpdate(this.awareness, changedClients)
-          this.publish('awareness-update', update)
+    // Sync Awareness Updates
+    this.awareness.on('update', ({ added, updated, removed }) => {
+      const changedClients = added.concat(updated).concat(removed)
+      this._publish({
+        type: 'awareness',
+        topic: this.topic,
+        update: toString(encodeAwarenessUpdate(this.awareness, changedClients), 'base64')
       })
+    })
+
+    // Request initial state
+    this._requestInitialState()
+
+    if (DEBUG) console.log(`📡 Provider initialized on topic: ${this.topic}`)
   }
 
-  // --- PubSub Helper ---
+  private _requestInitialState() {
+    const request = {
+      type: 'syncRequest',
+      topic: this.topic
+    }
+    this._publish(request)
 
-  private async publish(type: 'doc-update' | 'awareness-update', payload: Uint8Array) {
-      if (!this._connected) return
-
-      const message = {
-          type,
-          payload: Array.from(payload) // Convert Uint8Array to array for JSON serialization
-      }
-      const encoded = new TextEncoder().encode(JSON.stringify(message))
+    // Retry initial sync request if document is still empty
+    this._syncInterval = setInterval(() => {
+      if (this._isDestroyed) return
       
-      try {
-        await this.node.services.pubsub.publish(this.topic, encoded)
-      } catch (e) {
-        // Silent fail allowed in P2P
+      const monacoText = this.doc.getText('monaco')
+      if (monacoText.length === 0) {
+        if (DEBUG) console.log(`🔄 Retrying initial sync for ${this.topic}...`)
+        this._publish(request)
+      } else {
+        clearInterval(this._syncInterval)
       }
+    }, INTERVALS.INITIAL_SYNC_REQUEST)
   }
 
-  private applyUpdate(data: Uint8Array) {
-      try {
-          const decodedString = new TextDecoder().decode(data)
-          const message = JSON.parse(decodedString)
-          
-          const payload = new Uint8Array(message.payload)
-
-          if (message.type === 'doc-update') {
-              Y.applyUpdate(this.doc, payload, this) // Pass 'this' as origin
-          } else if (message.type === 'awareness-update') {
-               applyAwarenessUpdate(this.awareness, payload, 'remote')
-          }
-      } catch (e) {
-          console.error('Failed to process incoming message', e)
-      }
+  private async _publish(message: any) {
+    if (this._isDestroyed) return
+    try {
+      const data = fromString(JSON.stringify(message), 'utf8')
+      const pubsub = this.libp2p.services.pubsub as any
+      await pubsub.publish(this.topic, data)
+    } catch (err: any) {
+      if (DEBUG) console.error('❌ Failed to publish message:', err.message)
+    }
   }
 
-  public destroy() {
-     this._connected = false
-     try {
-        this.node.services.pubsub.unsubscribe(this.topic)
-        this.awareness.destroy()
-     } catch(e) {
-         console.error("Error destroying provider", e)
-     }
+  private _onMessage(evt: any) {
+    if (this._isDestroyed) return
+    const { topic, data } = evt.detail
+    if (topic !== this.topic) return
+
+    try {
+      const message = JSON.parse(toString(data, 'utf8'))
+      if (message.topic !== this.topic) return
+
+      switch (message.type) {
+        case 'syncRequest':
+          if (DEBUG) console.log(`📥 Received syncRequest on ${this.topic}`)
+          this._publish({
+            type: 'syncUpdate',
+            topic: this.topic,
+            update: toString(Y.encodeStateAsUpdate(this.doc), 'base64')
+          })
+          break
+        case 'syncUpdate':
+          if (DEBUG) console.log(`📥 Received syncUpdate on ${this.topic}`)
+          Y.applyUpdate(this.doc, fromString(message.update, 'base64'), this)
+          break
+        case 'awareness':
+          if (DEBUG) console.log(`📥 Received awareness on ${this.topic}`)
+          applyAwarenessUpdate(this.awareness, fromString(message.update, 'base64'), this)
+          break
+        default:
+          if (DEBUG) console.warn('❓ Unknown message type:', message.type)
+      }
+    } catch (err) {
+      if (DEBUG) console.error('❌ Error parsing message:', err)
+    }
+  }
+
+  destroy() {
+    this._isDestroyed = true
+    if (this._syncInterval) clearInterval(this._syncInterval)
+    
+    const pubsub = this.libp2p.services.pubsub as any
+    if (pubsub) {
+        pubsub.removeEventListener('message', this._onMessage)
+        pubsub.unsubscribe(this.topic)
+    }
+    if (DEBUG) console.log(`🛑 Provider destroyed for topic: ${this.topic}`)
   }
 }
