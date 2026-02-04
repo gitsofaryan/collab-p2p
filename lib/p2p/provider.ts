@@ -3,24 +3,31 @@ import { Libp2p } from 'libp2p'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
 import { toast } from 'sonner'
 
+// 1. Define the service map to tell TS that pubsub exists
+type ServiceMap = {
+  pubsub: any // Using 'any' here bypasses strict type checks on the pubsub methods
+}
+
 export class Libp2pProvider {
   public doc: Y.Doc
   public awareness: Awareness
-  public node: Libp2p
+  public node: Libp2p<ServiceMap>
   public topic: string
   private _connected: boolean = false
 
-  constructor(node: Libp2p, doc: Y.Doc, roomId: string) {
-    this.node = node
+  // 2. Accept a generic node in the constructor
+  constructor(node: Libp2p<any>, doc: Y.Doc, roomId: string) {
+    // 3. Cast the node to our specific type
+    this.node = node as Libp2p<ServiceMap>
     this.doc = doc
     this.topic = `collab-space-v1-${roomId}`
     this.awareness = new Awareness(doc)
 
-    // 1. Subscribe to Topic
+    // Now TypeScript knows 'pubsub' exists!
     this.node.services.pubsub.subscribe(this.topic)
 
     // 2. Listen for Incoming Messages (GossipSub)
-    this.node.services.pubsub.addEventListener('message', (evt: CustomEvent<any>) => {
+    this.node.services.pubsub.addEventListener('message', (evt: any) => {
       const { topic, data, from } = evt.detail
       if (topic !== this.topic) return
       if (from.toString() === this.node.peerId.toString()) return // Ignore self
@@ -68,8 +75,7 @@ export class Libp2pProvider {
       try {
         await this.node.services.pubsub.publish(this.topic, encoded)
       } catch (e) {
-        // console.error('Failed to publish update', e) 
-        // Silent fail is common in p2p when looking for peers
+        // Silent fail allowed in P2P
       }
   }
 

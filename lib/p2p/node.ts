@@ -26,9 +26,9 @@ export async function createNode(): Promise<Libp2p | null> {
     transports: [
       webSockets(), // v10 API - no filters needed
       webRTC(),
-      circuitRelayTransport({ discoverRelays: 1 }),
+      circuitRelayTransport(),
     ],
-    connectionEncryption: [noise()],
+    connectionEncrypters: [noise()],
     streamMuxers: [yamux()],
     connectionGater: {
         denyDialMultiaddr: () => false,
@@ -51,7 +51,7 @@ export async function createNode(): Promise<Libp2p | null> {
     ],
     services: {
       identify: identify(),
-      pubsub: gossipsub({ allowPublishToZeroPeers: true }),
+      pubsub: gossipsub({ allowPublishToZeroTopicPeers: true }) as any,
       dcutr: dcutr()
     }
   })
